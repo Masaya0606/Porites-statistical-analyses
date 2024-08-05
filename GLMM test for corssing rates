@@ -1,0 +1,138 @@
+##the following codes show the statisical analyses accoding to GLMM
+
+##mulpiple comparison among all combinations including self-fertilization
+# Load necessary libraries
+library(lme4)
+library(multcomp)
+library(DHARMa)
+library(readxl)
+
+# Load the data
+data <- read_excel("~/fertilizationDataPorites2408.xlsx")
+
+# Add selfing category
+data$Sperm_egg_selfing <- ifelse(data$SpermColony == data$EggColony, paste0(data$Sperm_egg, "-selfing"), data$Sperm_egg)
+
+# Fit the GLMM
+model <- glmer(cbind(fertilizedEgg, TotalEgg - fertilizedEgg) ~ Sperm_egg_selfing + (1|SpermColony) + (1|EggColony) +(1|sperm_concentration), 
+               data = data, family = binomial)
+
+# Fit the GLMM with interaction
+model2 <- glmer(cbind(fertilizedEgg, TotalEgg - fertilizedEgg) ~ Sperm_egg * Major + (1|SpermColony) + (1|EggColony) + (1|sperm_concentration), 
+               data = data, family = binomial, 
+               control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 100000)))
+
+# Summary of the model
+summary(model)
+
+# Check for overdispersion
+sim <- simulateResiduals(fittedModel = model)
+plot(sim)
+
+# If overdispersion is detected, refit with a quasi-binomial model
+if (testDispersion(sim)$p.value < 0.05) {
+  model <- glmer(cbind(fertilizedEgg, TotalEgg - fertilizedEgg) ~ Sperm_egg + (1|SpermColony) + (1|EggColony) + (1|Major), 
+                 data = data, family = quasibinomial)
+  summary(model)
+}
+
+# Perform multiple comparisons
+comparison <- glht(model, linfct = mcp(Sperm_egg_selfing = "Tukey"))
+summary(comparison)
+confint(comparison)
+
+#### Perform multiple comparisons excluding selfing
+# Add selfing category
+data$Sperm_egg_selfing <- ifelse(data$SpermColony == data$EggColony, paste0(data$Sperm_egg, "-selfing"), data$Sperm_egg)
+
+# Exclude Yy-selfing and Bb-selfing
+data_filtered <- subset(data, !(Sperm_egg_selfing %in% c("Yy-selfing", "Bb-selfing")))
+
+# Fit the GLMM
+model <- glmer(cbind(fertilizedEgg, TotalEgg - fertilizedEgg) ~ Sperm_egg_selfing + (1|SpermColony) + (1|EggColony) +(1|sperm_concentration), 
+               data = data_filtered, family = binomial, 
+               control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 100000)))
+
+# Summary of the model
+summary(model)
+
+# Check for overdispersion
+sim <- simulateResiduals(fittedModel = model)
+plot(sim)
+
+# If overdispersion is detected, refit with a quasi-binomial model
+if (testDispersion(sim)$p.value < 0.05) {
+  model <- glmer(cbind(fertilizedEgg, TotalEgg - fertilizedEgg) ~ Sperm_egg + (1|SpermColony) + (1|EggColony), 
+                 data = data_filtered, family = quasibinomial, 
+                 control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 100000)))
+  summary(model)
+}
+
+# Perform multiple comparisons
+comparison <- glht(model, linfct = mcp(Sperm_egg_selfing = "Tukey"))
+summary(comparison)
+confint(comparison)
+
+## Investigate differences between Major and Minor spawning
+# Load necessary libraries
+library(lme4)
+library(multcomp)
+library(DHARMa)
+library(readxl)
+
+# Load the data
+data <- read_excel("~/fertilizationDataPorites2408.xlsx")
+
+# Add selfing category
+data$Sperm_egg <- ifelse(data$SpermColony == data$EggColony, paste0(data$Sperm_egg, "-selfing"), data$Sperm_egg)
+
+# Add Major category
+data$Major <- factor(data$Major, levels = c("Mi", "Maj"))
+
+# Fit the GLMM
+model <- glmer(cbind(fertilizedEgg, TotalEgg - fertilizedEgg) ~ Sperm_egg*Major + (1|SpermColony) + (1|EggColony) + (1|sperm_concentration), 
+               data = data, family = binomial)
+
+# Summary of the model
+summary(model)
+
+# Check for overdispersion
+sim <- simulateResiduals(fittedModel = model)
+plot(sim)
+
+# If overdispersion is detected, refit with a quasi-binomial model
+if (testDispersion(sim)$p.value < 0.05) {
+  model <- glmer(cbind(fertilizedEgg, TotalEgg - fertilizedEgg) ~ Sperm_egg*Major + (1|SpermColony) + (1|EggColony) + (1|sperm_concentration), 
+                 data = data, family = quasibinomial)
+  summary(model)
+}
+
+# Perform multiple comparisons
+comparison <- glht(model, linfct = mcp(Sperm_egg = "Tukey"))
+summary(comparison)
+confint(comparison)
+
+# Perform multiple comparisons to test differences between Mi and Maj for each Sperm_egg category
+pairwise_comparisons <- lapply(unique(data$Sperm_egg), function(egg) {
+  subset_data <- subset(data, Sperm_egg == egg)
+  if (length(unique(subset_data$Major)) > 1) { # Execute only if there are more than one level of Major
+    model_subset <- glmer(cbind(fertilizedEgg, TotalEgg - fertilizedEgg) ~ Major + (1|SpermColony) + (1|EggColony)+(1|sperm_concentration), 
+                          data = subset_data, family = binomial)
+    
+    comparison_subset <- glht(model_subset, linfct = mcp(Major = "Tukey"))
+    return(summary(comparison_subset))
+  } else {
+    return(NULL)
+  }
+})
+
+# Display results
+for (i in 1:length(pairwise_comparisons)) {
+  if (!is.null(pairwise_comparisons[[i]])) {
+    cat("Sperm_egg category:", unique(data$Sperm_egg)[i], "\n")
+    print(pairwise_comparisons[[i]])
+    cat("\n")
+  } else {
+    cat("Sperm_egg category:", unique(data$Sperm_egg)[i], "has only one level of Major\n\n")
+  }
+}
